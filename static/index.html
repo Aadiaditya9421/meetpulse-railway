@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>MeetPulse — Video Conferencing Analysis</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet"/>
+  <link rel="stylesheet" href="/static/style.css"/>
+</head>
+<body>
+
+<nav class="navbar navbar-dark sticky-top">
+  <div class="container-xl d-flex align-items-center justify-content-between">
+    <span class="navbar-brand fw-bold fs-4">
+      <i class="bi bi-camera-video-fill me-2"></i>MeetPulse
+      <small class="fs-6 fw-normal opacity-75 ms-2">v3.0</small>
+    </span>
+    <div class="d-flex align-items-center gap-2">
+      <span class="badge bg-info-subtle text-info border border-info-subtle" id="modelBadge">
+        <i class="bi bi-cpu me-1"></i><span id="modelType">MLP</span>
+      </span>
+      <span class="badge bg-success-subtle text-success border border-success-subtle" id="statusBadge">
+        <i class="bi bi-circle-fill me-1" style="font-size:.5rem"></i>Connecting…
+      </span>
+    </div>
+  </div>
+</nav>
+
+<header class="hero text-center py-5">
+  <div class="container">
+    <h1 class="display-5 fw-bold">Video Conferencing Analysis</h1>
+    <p class="lead text-muted mb-4">Paste your meeting transcript. MLP model (F1=0.8805) classifies sentiment in milliseconds.</p>
+    <div class="row justify-content-center g-3" id="modelInfo">
+      <div class="col-auto"><span class="stat-chip"><i class="bi bi-cpu me-1"></i>MLP Primary (F1=0.8805)</span></div>
+      <div class="col-auto"><span class="stat-chip"><i class="bi bi-shield-check me-1"></i>SVM Fallback (F1=0.7596)</span></div>
+      <div class="col-auto"><span class="stat-chip"><i class="bi bi-grid-3x3-gap me-1"></i>5000 TF-IDF features</span></div>
+    </div>
+  </div>
+</header>
+
+<main class="container-xl py-5">
+  <div class="row g-4">
+
+    <!-- Input Panel -->
+    <div class="col-lg-6">
+      <div class="card shadow-sm h-100">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h5 class="mb-0"><i class="bi bi-pencil-square me-2 text-primary"></i>Meeting Transcript</h5>
+          <button class="btn btn-sm btn-outline-secondary" id="clearBtn">
+            <i class="bi bi-x-circle me-1"></i>Clear
+          </button>
+        </div>
+        <div class="card-body d-flex flex-column">
+          <textarea
+            id="transcript"
+            class="form-control flex-grow-1"
+            rows="10"
+            placeholder="Paste your meeting transcript here…&#10;&#10;Examples:&#10;• 'Great progress on the sprint, team delivered ahead of schedule.'&#10;• 'We are significantly behind, multiple blockers unresolved.'&#10;• 'Reviewed the backlog and estimated story points for next sprint.'"
+          ></textarea>
+          <div class="d-flex justify-content-between align-items-center mt-2">
+            <small class="text-muted"><span id="charCount">0</span> / 5000 characters</small>
+            <div class="d-flex gap-2">
+              <button class="btn btn-outline-secondary btn-sm" id="sampleBtn">
+                <i class="bi bi-lightbulb me-1"></i>Sample
+              </button>
+              <button class="btn btn-outline-info btn-sm" id="explainBtn" title="Explain prediction">
+                <i class="bi bi-search me-1"></i>Explain
+              </button>
+              <button class="btn btn-primary px-4" id="analyzeBtn">
+                <i class="bi bi-lightning-fill me-1"></i>Analyze
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Results Panel -->
+    <div class="col-lg-6">
+      <div class="card shadow-sm h-100">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h5 class="mb-0"><i class="bi bi-bar-chart-line me-2 text-success"></i>Analysis Results</h5>
+          <span id="requestId" class="text-muted" style="font-size:.72rem;font-family:monospace"></span>
+        </div>
+        <div class="card-body d-flex flex-column justify-content-center">
+
+          <div id="idleState" class="text-center py-5 text-muted">
+            <i class="bi bi-arrow-left-circle display-4 mb-3 d-block"></i>
+            <p class="mb-0">Enter transcript text and click <strong>Analyze</strong> to see results.</p>
+          </div>
+
+          <div id="loader" class="text-center py-5 d-none">
+            <div class="spinner-border text-primary mb-3" role="status"></div>
+            <p class="text-muted">Analyzing sentiment…</p>
+          </div>
+
+          <div id="results" class="d-none">
+            <div class="text-center mb-3">
+              <div class="sentiment-badge mx-auto mb-2" id="sentimentBadge"></div>
+              <h3 id="sentimentLabel" class="fw-bold mb-1"></h3>
+              <div class="d-flex justify-content-center align-items-center gap-2">
+                <span class="text-muted">Confidence:</span>
+                <strong id="confidenceVal"></strong>
+                <span id="confLevelBadge" class="badge"></span>
+              </div>
+            </div>
+
+            <div class="progress mb-3" style="height:12px;border-radius:6px">
+              <div id="confidenceBar" class="progress-bar" style="width:0%;transition:width .6s ease"></div>
+            </div>
+
+            <div id="lowConfWarn" class="alert alert-warning py-2 d-none" role="alert">
+              <i class="bi bi-exclamation-triangle me-1"></i>
+              <strong>Low / Moderate Confidence</strong> — prediction may be uncertain.
+            </div>
+
+            <h6 class="fw-semibold mt-3 mb-2">Score Breakdown</h6>
+            <div id="scoreBreakdown"></div>
+
+            <hr/>
+            <div class="row text-center g-2 mt-1">
+              <div class="col-3"><div class="stat-mini"><div class="stat-val" id="wordCount">—</div><div class="stat-key">Words</div></div></div>
+              <div class="col-3"><div class="stat-mini"><div class="stat-val" id="latency">—</div><div class="stat-key">ms</div></div></div>
+              <div class="col-3"><div class="stat-mini"><div class="stat-val" id="modelUsed">—</div><div class="stat-key">Model</div></div></div>
+              <div class="col-3"><div class="stat-mini"><div class="stat-val" id="modelF1">—</div><div class="stat-key">F1</div></div></div>
+            </div>
+          </div>
+
+          <!-- Explain panel -->
+          <div id="explainPanel" class="d-none mt-2">
+            <hr/>
+            <h6 class="fw-semibold"><i class="bi bi-search me-1 text-info"></i>Top Contributing Words</h6>
+            <div id="explainList"></div>
+          </div>
+
+          <div id="errorBox" class="d-none">
+            <div class="alert alert-danger">
+              <i class="bi bi-exclamation-octagon me-2"></i>
+              <span id="errorMsg"></span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- History -->
+  <div class="row mt-5">
+    <div class="col-12">
+      <div class="card shadow-sm">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h5 class="mb-0"><i class="bi bi-clock-history me-2 text-secondary"></i>Analysis History</h5>
+          <button class="btn btn-sm btn-outline-danger" id="clearHistoryBtn">
+            <i class="bi bi-trash me-1"></i>Clear
+          </button>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th>#</th><th>Excerpt</th><th>Sentiment</th>
+                  <th>Confidence</th><th>Level</th><th>Words</th><th>Time</th>
+                </tr>
+              </thead>
+              <tbody id="historyBody">
+                <tr id="noHistory">
+                  <td colspan="7" class="text-center text-muted py-4">No analyses yet.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Live Metrics -->
+  <div class="row mt-4">
+    <div class="col-12">
+      <div class="card shadow-sm">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h5 class="mb-0"><i class="bi bi-activity me-2 text-primary"></i>Live Server Metrics</h5>
+          <button class="btn btn-sm btn-outline-secondary" id="refreshMetricsBtn">
+            <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+          </button>
+        </div>
+        <div class="card-body">
+          <div class="row text-center g-3" id="metricsRow">
+            <div class="col"><div class="stat-mini"><div class="stat-val" id="mTotal">—</div><div class="stat-key">Total Requests</div></div></div>
+            <div class="col"><div class="stat-mini"><div class="stat-val" id="mAvgMs">—</div><div class="stat-key">Avg Latency (ms)</div></div></div>
+            <div class="col"><div class="stat-mini"><div class="stat-val text-success" id="mPos">—</div><div class="stat-key">Positive</div></div></div>
+            <div class="col"><div class="stat-mini"><div class="stat-val text-danger" id="mNeg">—</div><div class="stat-key">Negative</div></div></div>
+            <div class="col"><div class="stat-mini"><div class="stat-val text-warning" id="mNeu">—</div><div class="stat-key">Neutral</div></div></div>
+            <div class="col"><div class="stat-mini"><div class="stat-val text-muted" id="mLowConf">—</div><div class="stat-key">Low Conf.</div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer class="text-center py-4 text-muted border-top mt-4">
+  <small>
+    MeetPulse v3.0 &mdash; ADITYA SINGH | Roll No: 23052212 | KIIT University &mdash;
+    Primary: <strong>MLPClassifier</strong> (F1=0.8805) &bull; Fallback: <strong>SVM</strong> (F1=0.7596)
+  </small>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/static/script.js"></script>
+</body>
+</html>
